@@ -1,0 +1,5 @@
+authorized_keys.dnsbotnet
+.*.swp
+dnsbotnet
+dnsbotnet.*.*
+id_rsa.dnsbotnet
