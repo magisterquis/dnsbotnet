@@ -88,13 +88,20 @@ const (
 
 	// C2HELP is a helpful list of commands
 	C2HELP = `Available commands:
-help        - This message
-id          - Show all beacons
-idr <regex> - Show beacons from implants matching regex
-id <ID>     - Show a particular implant's output (not beacons)
-t <ID>      - Task the current implant (after ID is set)
-last [n]    - Show the [n most recent] beacons from all implants
-exit        - Goodbye.`
+help         - This message
+id           - Show all beacons
+idr <regex>  - Show beacons from implants matching regex
+id <ID>      - Show a particular implant's output (not beacons)
+t <ID>       - Task the current implant (after ID is set)
+last <regex> - Show the most recent beacon from the given implant
+lastn [n]    - Show the [n most recent] beacons
+exit         - Goodbye.`
+)
+
+/* Third argmuent to listLastImplants */
+const (
+	selCOUNT = iota
+	selNAME
 )
 
 var (
@@ -179,8 +186,10 @@ func HandleC2Command(c *C2Client, line string) error {
 		watchRegex(c, arg)
 	case "t": /* Task an implant */
 		taskImplant(c, arg)
+	case "lastn":
+		listLastImplants(c, arg, selCOUNT)
 	case "last":
-		listLastImplants(c, arg)
+		listLastImplants(c, arg, selNAME)
 	case "exit":
 		return io.EOF
 	case "h", "help", "?":
@@ -281,19 +290,36 @@ func taskImplant(c *C2Client, task string) {
 
 /* listLastImplants lists the last count implants and the time they called
 back.  If n is the empty string, list all implants */
-func listLastImplants(c *C2Client, count string) {
+func listLastImplants(c *C2Client, arg string, sel int) {
 	/* Turn count into a number */
 	var (
 		n   int
 		err error
+		re  *regexp.Regexp
 	)
-	if "" != count {
-		n, err = strconv.Atoi(count)
+
+	/* Searching for no name is the same as searching for the last ""
+	implants. */
+	if "" == arg {
+		sel = selCOUNT
+	}
+
+	/* Compile (and validate) regex */
+	if selNAME == sel {
+		if re, err = regexp.Compile(arg); nil != err {
+			fmt.Fprintf(c.t, "Invalid regex %v: %v\n", arg, err)
+			return
+		}
+	}
+
+	/* Get a number if we're meant to */
+	if selCOUNT == sel && "" != arg {
+		n, err = strconv.Atoi(arg)
 		if nil != err {
 			fmt.Fprintf(
 				c.t,
-				"Cannot turn %q into a number: %v",
-				count,
+				"Cannot turn %q into a number: %v\n",
+				arg,
 				err,
 			)
 		}
@@ -302,6 +328,15 @@ func listLastImplants(c *C2Client, count string) {
 	/* Get all known implants */
 	var is []*Implant
 	for _, k := range IMPLANTS.Keys() {
+		/* If we're only looking for a specific implant, skip all the
+		rest */
+		id, ok := k.(string)
+		if !ok {
+			log.Panicf("Invalid implant ID type %T", k)
+		}
+		if selNAME == sel && !re.MatchString(id) {
+			continue
+		}
 		/* Get implant */
 		v, ok := IMPLANTS.Get(k)
 		if !ok {
@@ -322,7 +357,11 @@ func listLastImplants(c *C2Client, count string) {
 		is = append(is, i)
 	}
 	if 0 == len(is) {
-		c.log.Printf("No implants seen yet")
+		if selNAME == sel {
+			c.log.Printf("No implants matching %v seen yet", arg)
+		} else {
+			c.log.Printf("No implants seen yet")
+		}
 		return
 	}
 
