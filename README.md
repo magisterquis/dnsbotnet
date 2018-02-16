@@ -98,6 +98,7 @@ The C2 client session can either be used to display tasking output or beacons
 
 Example C2 session:
 ```
+$ ssh -p 10987 c2server.com
 Welcome to the DNSBotnet Server!
 
 Available commands:
