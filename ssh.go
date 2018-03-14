@@ -160,7 +160,7 @@ func checkCert(
 	}
 
 	/* No matching key found */
-	return nil, errors.New("unauthorized")
+	return nil, fmt.Errorf("unauthorized (%q)", conn.User())
 }
 
 /* makeSSHKey generates an SSH private key in the file named fn */
