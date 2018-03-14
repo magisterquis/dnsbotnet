@@ -68,6 +68,7 @@ name will be explained below.  The output should be carefully chunked to
 
 ### Names
 Request and response names have the following parts
+
 |Label|Meaning|Example|
 |-----|-------|-------|
 |ignored   | Ignored, for symmetry with beacons.                                                                                   | 0           |
