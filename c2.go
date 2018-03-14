@@ -92,7 +92,7 @@ help         - This message
 id           - Show all beacons
 idr <regex>  - Show beacons from implants matching regex
 id <ID>      - Show a particular implant's output (not beacons)
-t <ID>       - Task the current implant (after ID is set)
+t <command>  - Task the current implant (after ID is set)
 last <regex> - Show the most recent beacon from the given implant
 lastn [n]    - Show the [n most recent] beacons
 exit         - Goodbye.`
