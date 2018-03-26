@@ -140,8 +140,14 @@ func checkCert(
 	/* Check each line to see if any match */
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		/* Turn the line into a key */
+		/* Read a line */
 		l := scanner.Bytes()
+		/* Ignore blank lines and comments */
+		if 0 == len(l) || '#' == l[0] {
+			continue
+		}
+
+		/* Turn line into a key */
 		k, _, _, _, err := ssh.ParseAuthorizedKey(l)
 		if nil != err {
 			log.Printf(
@@ -299,9 +305,11 @@ func handleSession(ch ssh.Channel, reqs <-chan *ssh.Request, tag string) {
 				handlePtyReq(tag, t, req.Payload)
 			case "window-change": /* Window size change */
 				handleWindowChange(tag, t, req.Payload)
+			case "env": /* Don't care */
+				continue
 			default:
 				log.Printf(
-					"%v Unhandled request: %v %q",
+					"%v Unhandled request: %q %q",
 					tag,
 					req.Type,
 					string(req.Payload),
