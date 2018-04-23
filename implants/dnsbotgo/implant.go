@@ -137,6 +137,7 @@ Options:
 			os.Stderr,
 			"Cannot send more than %v bytes per request "+
 				"(-exfil-max)\n",
+			MAXEXFIL,
 		)
 		os.Exit(3)
 	}
