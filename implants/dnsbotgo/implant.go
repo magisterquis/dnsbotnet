@@ -43,6 +43,10 @@ const (
 
 	// DOHPREFIX holds the prefix for a DOH request
 	DOHPREFIX = "https://dns.google.com/resolve?type=TXT&name="
+
+	// DEFFRONTPORT is the default port used for domain-fronted TLS
+	// connections
+	DEFFRONTPORT = "443"
 )
 
 var (
@@ -409,11 +413,16 @@ fronted to a given domain. */
 func queryDF(
 	frontDomain string,
 ) func([]byte, string, string, string, int) []string {
+	/* Make sure our domain has a port */
+	if _, _, err := net.SplitHostPort(frontDomain); nil != err {
+		frontDomain = net.JoinHostPort(frontDomain, DEFFRONTPORT)
+	}
+
 	/* HTTP Client which fronts */
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				ServerName: frontDomain,
+			DialTLS: func(network, addr string) (net.Conn, error) {
+				return tls.Dial("tcp", frontDomain, nil)
 			},
 		},
 	}
