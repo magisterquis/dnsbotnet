@@ -6,7 +6,7 @@ package main
  * Control a DNS-based botnet
  * By J. Stuart McMurray
  * Created 20180210
- * Last Modified 20180211
+ * Last Modified 20180717
  */
 
 import (
