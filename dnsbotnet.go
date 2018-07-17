@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
 	"strings"
@@ -55,6 +56,11 @@ func main() {
 			"Name of `file` with allowed SSH keys, in OpenSSH "+
 				"authorized_keys format",
 		)
+		ttl = flag.Uint64(
+			"reply-ttl",
+			7200,
+			"Time-to-live in `seconds` to use for replies",
+		)
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(
@@ -82,7 +88,7 @@ Options:
 
 	log.SetOutput(os.Stdout)
 
-	/* Register DNS handlers */
+	/* Work out domain to serve */
 	if "" == *domain {
 		log.Fatalf("Domain needed")
 	}
@@ -91,6 +97,14 @@ Options:
 		log.Fatalf("Invalid domain %q", *domain)
 	}
 	DOMAIN = *domain
+
+	/* Make sure we have a reasonable TTL */
+	if math.MaxUint32 < *ttl {
+		log.Fatalf("TTL must be less than %v", math.MaxUint32)
+	}
+	TTL = uint32(*ttl)
+
+	/* Register DNS handlers */
 	dns.HandleFunc(*domain, HandleDNS)
 
 	/* Make A record to return for the bare domain */
@@ -100,7 +114,7 @@ Options:
 				Name:   DOMAIN,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    30,
+				Ttl:    TTL,
 			},
 			A: net.ParseIP(*aREC),
 		}

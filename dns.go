@@ -38,6 +38,8 @@ var (
 	DOMAIN string
 	// AREC holds a A record with the above IP
 	AREC *dns.A
+	// TTL is the default TTL to put in DNS replies
+	TTL uint32
 
 	// dnsCache prevents us from repeating answers
 	dnsCache     *lru.Cache
@@ -151,7 +153,7 @@ func HandleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			Name:   q.Name,
 			Rrtype: dns.TypeTXT,
 			Class:  dns.ClassINET,
-			Ttl:    30,
+			Ttl:    TTL,
 		},
 		Txt: []string{s},
 	})
