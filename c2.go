@@ -322,6 +322,21 @@ func listLastImplants(c *C2Client, arg string, sel int) {
 				arg,
 				err,
 			)
+			return
+		}
+		if 0 > n {
+			fmt.Fprintf(
+				c.t,
+				"Cannot list a negative number of implants\n",
+			)
+			return
+		}
+		if 0 == n {
+			fmt.Fprintf(
+				c.t,
+				"Listing no implants\n",
+			)
+			return
 		}
 	}
 
