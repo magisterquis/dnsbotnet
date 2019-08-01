@@ -65,6 +65,7 @@ var (
 
 	/* staticID may be set to bake-in a default ID to use */
 	staticID = ""
+	staticIDB36Max = 8
 )
 
 /* googleResponse holds a DoH response from google */
@@ -237,9 +238,13 @@ the first non-loopback address it finds. */
 func defaultID() string {
 	var id string
 
-	/* If we have one statically set, use that */
+	/* If we have one statically set, use that plus four random bytes */
 	if "" != staticID {
-		return staticID
+		n := strconv.FormatInt(int64(time.Now().Nanosecond()),36)
+		if len(n) > staticIDB36Max {
+			n = n[:staticIDB36Max]
+			}
+		return staticID +"-"+ n
 	}
 
 	/* Look through all the interfaces for one we like */
