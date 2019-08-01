@@ -62,6 +62,9 @@ var (
 	or "o"), for the given ID, to the given name.  len bytes will be
 	sent at once. */
 	query func(o []byte, t, id, domain string, len int) []string
+
+	/* staticID may be set to bake-in a default ID to use */
+	staticID = ""
 )
 
 /* googleResponse holds a DoH response from google */
@@ -233,6 +236,11 @@ Options:
 the first non-loopback address it finds. */
 func defaultID() string {
 	var id string
+
+	/* If we have one statically set, use that */
+	if "" != staticID {
+		return staticID
+	}
 
 	/* Look through all the interfaces for one we like */
 	is, err := net.Interfaces()
