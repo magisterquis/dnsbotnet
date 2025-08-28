@@ -2,11 +2,9 @@ DNSBotnet
 =========
 Controller for a DNS TXT record-based botnet.
 
-Work in progress, though works pretty well as-is.
+Work "in progress", though works pretty well as-is.
 
-
-
-More documentation (and ease-of-use) will be implemented in the future.
+~More documentation (and ease-of-use) will be implemented in the future.~
 
 For legal use only.
 
@@ -15,13 +13,13 @@ Building / Installation
 The botnet Controller (in the same directory as this file) can be built and
 installed with the customary
 ```bash
-go get github.com/magisterquis/dnsbotnet
+go install github.com/magisterquis/dnsbotnet@latest
 ```
 or
 ```bash
 git clone github.com/magisterquis/dnsbotnet
 cd dnsbotnet
-go build
+go install
 ```
 
 Aside from the binary, an NS record for the domain to be used for beacons must
